@@ -1,0 +1,12 @@
+version: '3.1'
+services:
+  app:
+    image: "marlikalmighty/analyze"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+  redis:
+    image: "redis:latest"
+    ports:
+      - "6379:6379"
