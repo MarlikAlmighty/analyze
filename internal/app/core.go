@@ -267,7 +267,7 @@ func (core *Core) catchPostFromRzn(m map[string]string) (models.Array, error) {
 		post.Link = link
 		data = append(data, &post)
 
-		log.Printf("append post %v\n", post.Link)
+		log.Printf("append post, hash: %v\n", post.Hash)
 
 		time.Sleep(10 * time.Second)
 	}
@@ -355,7 +355,7 @@ func (core *Core) catchPostFromYa(m map[string]string) (models.Array, error) {
 		post.Link = link
 		data = append(data, &post)
 
-		log.Printf("append post %v\n", post.Link)
+		log.Printf("append post, hash: %v\n", post.Hash)
 
 		time.Sleep(10 * time.Second)
 	}
