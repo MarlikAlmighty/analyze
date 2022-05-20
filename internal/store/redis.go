@@ -1,0 +1,57 @@
+package store
+
+import (
+	"context"
+	"github.com/go-redis/redis/v8"
+	"log"
+	"time"
+)
+
+// Store client redis
+type Store struct {
+	Client *redis.Client
+}
+
+func New() *Store {
+	return &Store{}
+}
+
+// Connect simple constructor
+func (s *Store) Connect(redisUrl string) (*redis.Client, error) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	opt, err := redis.ParseURL(redisUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	r := redis.NewClient(&redis.Options{
+		Addr:     opt.Addr,
+		Password: opt.Password,
+		DB:       opt.DB,
+	})
+
+	if _, err = r.Ping(ctx).Result(); err != nil {
+		log.Fatalln(err)
+	}
+
+	return r, nil
+}
+
+func (s *Store) Get(ctx context.Context, key string) *redis.StringCmd {
+	return s.Client.Get(ctx, key)
+}
+
+func (s *Store) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
+	return s.Client.Set(ctx, key, value, time.Duration(48*time.Hour))
+}
+
+// Close closing the connection
+func (s *Store) Close() error {
+	if err := s.Client.Close(); err != nil {
+		return err
+	}
+	return nil
+}
