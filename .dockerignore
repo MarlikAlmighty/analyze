@@ -1,5 +1,11 @@
 .idea/
-swagger/
-deployments/
+.git/
+bin/
+swagger.yaml
+Procfile
+Makefile
+Dockerfile
+docker-compose.yaml
+.dockerignore
 .gitignore
 Dockerfile

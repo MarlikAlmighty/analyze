@@ -6,18 +6,19 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/MarlikAlmighty/analyze-it/internal/config"
-	"github.com/MarlikAlmighty/analyze-it/internal/models"
-	"github.com/PuerkitoBio/goquery"
-	"github.com/chromedp/chromedp"
-	"github.com/go-redis/redis/v8"
-	tg "gopkg.in/telegram-bot-api.v4"
 	"log"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/MarlikAlmighty/analyze-it/internal/config"
+	"github.com/MarlikAlmighty/analyze-it/internal/models"
+	"github.com/PuerkitoBio/goquery"
+	"github.com/chromedp/chromedp"
+	"github.com/go-redis/redis/v8"
+	tg "gopkg.in/telegram-bot-api.v4"
 )
 
 // Core application
@@ -66,29 +67,23 @@ type (
 
 func (core *Core) Run() {
 
+	rm := make(map[string]string)
+	ym := make(map[string]string)
 	var err error
 
 	for {
 
-		m := make(map[string]string)
-
-		if m, err = core.getLinkRzn(); err != nil {
+		if rm, err = core.getLinkRzn(); err != nil {
 			log.Println("[ERROR] get link from rzn: " + err.Error())
 			break
 		}
 
-		if len(m) > 0 {
+		if len(rm) > 0 {
 
-			log.Printf("got links from rzn: %v\n", len(m))
-
-			mp := make(map[string]string)
-			if mp, err = core.checkLink(m); err != nil {
-				log.Printf("catch link from rzn: %v \n", err)
-				break
-			}
+			log.Printf("got links from rzn: %v\n", len(rm))
 
 			var data models.Array
-			if data, err = core.catchPostFromRzn(mp); err != nil {
+			if data, err = core.catchPostFromRzn(rm); err != nil {
 				log.Println("[ERROR] catch post from rzn: " + err.Error())
 				break
 			}
@@ -101,23 +96,17 @@ func (core *Core) Run() {
 			log.Println("Finished send post from rzn")
 		}
 
-		if m, err = core.getLinkYa(); err != nil {
+		if ym, err = core.getLinkYa(); err != nil {
 			log.Printf("[ERROR] get link from ya: " + err.Error())
 			break
 		}
 
-		if len(m) > 0 {
+		if len(ym) > 0 {
 
-			log.Printf("got links from ya: %v\n", len(m))
-
-			mp := make(map[string]string)
-			if mp, err = core.checkLink(m); err != nil {
-				log.Printf("catch link from rzn: %v \n", err)
-				break
-			}
+			log.Printf("got links from ya: %v\n", len(ym))
 
 			var data models.Array
-			if data, err = core.catchPostFromYa(mp); err != nil {
+			if data, err = core.catchPostFromYa(ym); err != nil {
 				log.Println("[ERROR] catch post from ya: " + err.Error())
 				break
 			}
@@ -130,6 +119,7 @@ func (core *Core) Run() {
 			log.Println("Finished send post from ya")
 		}
 
+		log.Println("Sleep for one hour")
 		time.Sleep(1 * time.Hour)
 	}
 }
@@ -363,27 +353,14 @@ func (core *Core) catchPostFromYa(m map[string]string) (models.Array, error) {
 	return data, nil
 }
 
-func (core *Core) checkLink(m map[string]string) (map[string]string, error) {
-
-	log.Println("start check link")
-
-	mp := make(map[string]string)
-
-	for k, v := range m {
-		hash := core.getMD5Hash(k)
-		if _, err := core.Store.Get(context.Background(), hash).Result(); err == redis.Nil {
-			mp[k] = v
-		} else if err != nil {
-			return nil, err
-		}
-	}
-
-	return mp, nil
-}
-
 func (core *Core) checkPreSend(arr models.Array) error {
 
 	log.Println("start check key word function")
+
+	var (
+		keyWord string
+		count   int
+	)
 
 	for _, v := range arr {
 
@@ -392,7 +369,13 @@ func (core *Core) checkPreSend(arr models.Array) error {
 			break
 		}
 
-		keyWord := core.findWords(v.Title, v.Body)
+		if _, err := core.Store.Get(context.Background(), v.Hash).Result(); err == redis.Nil {
+			break
+		} else if err != nil {
+			return err
+		}
+
+		keyWord = core.findWords(v.Title, v.Body)
 
 		if len(keyWord) > 0 {
 
@@ -400,11 +383,15 @@ func (core *Core) checkPreSend(arr models.Array) error {
 				return err
 			}
 
+			count++
+
 			if err := core.Store.Set(context.Background(), v.Hash, v.Title, 48*time.Hour).Err(); err != nil {
 				return err
 			}
 		}
 	}
+
+	log.Printf("send %v post to telegram\n", count)
 
 	return nil
 }
@@ -456,24 +443,25 @@ func (core *Core) Stop() {
 // findWords find in text a key words
 func (core *Core) findWords(title, body string) string {
 
-	var whatWords = "гибдд угибдд дпс пдд мчс мвд фсб умвд м5 м6 " +
-		"инспектор автоинспектор полицейски полици пристав приговор " +
-		"суд осуд осуж уголовн оштрафо арест дтп авари столкновени " +
-		"столкнул врезал протаранил протаранивш притё опрокинул " +
-		"опрокидыв перевернул провали перелет улёт улет влете обрушивш " +
-		"рухнул снёс снес въехал падени упа сбил сби расстерзал разорвал " +
-		"оборва загрыз прорвал бомб снаряд оружи боеприпа мин укус рейд " +
-		"взрыв взорвал убий гибел убил зареза скончал борьб драк побоищ " +
-		"расстреля подрал нарко пожар загорел сгорел возгоран горит горел " +
-		"тело труп мёртвы мёртво мертво мертве умер поги гибел гибн " +
-		"смертельн пропал упал выпа эвакуа утону утоп смыл затопил сгоре " +
-		"ограб грабит разбой разбойни мошенн обманул фальшив кража укра " +
-		"пропажа пропа угон обго угнал ищут поиск розыск разыскива отрави " +
-		"вскры взлома насил изнасил бешенств взятк суд коррупци беспредел " +
-		"напал нападени разборк преследова сбежав сбежал протест забастовк " +
-		"бастовал бунт такс пострада подозрит проституц проститут погода " +
-		"дождь гроза ветер туман опасност заморозки похолода циклон урага " +
-		"снег синопти холод футбол хоккей хоккеи игрок нетрезв пьян рязан "
+	var whatWords = "гибдд угибдд дпс пдд мчс мвд фсб умвд лиза алерт" +
+		"инспектор автоинспектор полицейски полици пристав" +
+		"суд осуд осуж уголовн оштрафо штраф арест взятк коррупци беспредел" +
+		"пропажа пропа приговор ищут поиск розыск разыскива" +
+		"дтп авари столкновени столкнул врезал протаранил протаранивш притё угон обго угнал" +
+		"опрокинул вылете опрокидыв перевернул провали перелет улёт улет влете обогн" +
+		"обрушивш рухнул снёс снес въехал падени упа сбил травм м5 м6" +
+		"бомб снаряд оружи боеприпа минирова укус рейд взрыв взорвал" +
+		"смертельн пропал упал выпа эвакуа утону утоп смыл затопил сгоре" +
+		"пожар загорел сгорел возгоран гори горело горела оборва прорвал" +
+		"убий гибел убил зареза скончал борьб драк побоищ отрави" +
+		"изби расстерзал разорвал расстреля подрал нарко загрыз" +
+		"тело труп мёртвы мёртво мертво мертве умер поги гибел гибн" +
+		"напал нападени разборк преследова сбежав сбежал" +
+		"ограб грабит разбой разбойни мошенн обманул фальшив краж укра" +
+		"вскры взлома насил изнасил бешенств нетрезв пьян рязан" +
+		"протест забастов бастовал пострада подозрит проституц проститут" +
+		"дождь гроза ветер туман уровень желтый красный опасност" +
+		"заморозки похолода циклон урага снег синопти холод погод"
 
 	Title := strings.Fields(title)
 	Body := strings.Fields(body)
