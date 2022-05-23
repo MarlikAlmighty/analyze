@@ -1,15 +1,14 @@
 package main
 
 import (
-	"github.com/MarlikAlmighty/analyze-it/internal/app"
-	"github.com/MarlikAlmighty/analyze-it/internal/config"
-	"github.com/MarlikAlmighty/analyze-it/internal/store"
-	"github.com/gorilla/mux"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/MarlikAlmighty/analyze-it/internal/app"
+	"github.com/MarlikAlmighty/analyze-it/internal/config"
+	"github.com/MarlikAlmighty/analyze-it/internal/store"
 )
 
 func main() {
@@ -26,36 +25,13 @@ func main() {
 	}
 	s.Client = r
 
-	stopServer := make(chan os.Signal, 1)
-	signal.Notify(stopServer, syscall.SIGKILL, syscall.SIGINT, syscall.SIGTERM)
+	stopApp := make(chan os.Signal, 1)
+	signal.Notify(stopApp, syscall.SIGKILL, syscall.SIGINT, syscall.SIGTERM)
 
-	router := mux.NewRouter()
-	router.HandleFunc("/", homeHandler)
-
-	srv := &http.Server{
-		Addr:    ":" + os.Getenv("PORT"),
-		Handler: router,
-	}
-
-	core := app.New(cnf, s, srv)
+	core := app.New(cnf, s)
 	go core.Run()
 
-	log.Println("http: Server start")
-
-	go func() {
-		if err = core.Server.ListenAndServe(); err != nil {
-			log.Fatalln(err)
-		}
-	}()
-
-	sig := <-stopServer
+	sig := <-stopApp
 	log.Printf("Catch signal %s, exit app...", sig)
 	core.Stop()
-}
-
-func homeHandler(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(200)
-	if _, err := w.Write([]byte("I'm alive!")); err != nil {
-		log.Fatalln(err)
-	}
 }

@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/go-redis/redis/v8"
 	"log"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -17,7 +17,6 @@ import (
 	"github.com/MarlikAlmighty/analyze-it/internal/models"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/chromedp/chromedp"
-	"github.com/go-redis/redis/v8"
 	tg "gopkg.in/telegram-bot-api.v4"
 )
 
@@ -25,15 +24,13 @@ import (
 type Core struct {
 	Config Config `config:"-"`
 	Store  Store  `store:"-"`
-	Server Server `server:"-"`
 }
 
 // New application app initialization
-func New(c *config.Configuration, r Store, s *http.Server) *Core {
+func New(c *config.Configuration, r Store) *Core {
 	return &Core{
 		Config: c,
 		Store:  r,
-		Server: s,
 	}
 }
 
@@ -48,15 +45,12 @@ type (
 		checkLink(m map[string]string) (map[string]string, error)
 		checkPreSend(arr models.Array) error
 		findWords(title, body string) string
-		senToTelegram(p models.Post) error
+		sendToTelegram(p models.Post) error
 		browser(url string) (string, error)
 		createMD5Hash(s string) string
+		mustParseDuration(s string) time.Duration
 	}
 	Config interface {
-	}
-	Server interface {
-		ListenAndServe() error
-		Shutdown(ctx context.Context) error
 	}
 	Store interface {
 		Get(ctx context.Context, key string) *redis.StringCmd
@@ -67,60 +61,69 @@ type (
 
 func (core *Core) Run() {
 
+	statsInt := core.mustParseDuration("1h")
+	statsTimer := time.NewTimer(statsInt)
 	rm := make(map[string]string)
 	ym := make(map[string]string)
 	var err error
 
 	for {
 
-		if rm, err = core.getLinkRzn(); err != nil {
-			log.Println("[ERROR] get link from rzn: " + err.Error())
-			break
-		}
+		statsTimer.Reset(statsInt)
 
-		if len(rm) > 0 {
+		go func() {
+
+			if rm, err = core.getLinkRzn(); err != nil {
+				log.Println("[ERROR] get link from rzn: " + err.Error())
+				return
+			}
 
 			log.Printf("got links from rzn: %v\n", len(rm))
+			if len(rm) == 0 {
+				return
+			}
 
-			var data models.Array
+			data := models.Array{}
 			if data, err = core.catchPostFromRzn(rm); err != nil {
 				log.Println("[ERROR] catch post from rzn: " + err.Error())
-				break
+				return
 			}
 
 			if err = core.checkPreSend(data); err != nil {
 				log.Println("[ERROR] check key words: " + err.Error())
-				break
+				return
 			}
 
 			log.Println("Finished send post from rzn")
-		}
+		}()
 
-		if ym, err = core.getLinkYa(); err != nil {
-			log.Printf("[ERROR] get link from ya: " + err.Error())
-			break
-		}
+		go func() {
 
-		if len(ym) > 0 {
+			if ym, err = core.getLinkYa(); err != nil {
+				log.Printf("[ERROR] get link from ya: " + err.Error())
+				return
+			}
 
 			log.Printf("got links from ya: %v\n", len(ym))
+			if len(ym) == 0 {
+				return
+			}
 
-			var data models.Array
+			data := models.Array{}
 			if data, err = core.catchPostFromYa(ym); err != nil {
 				log.Println("[ERROR] catch post from ya: " + err.Error())
-				break
+				return
 			}
 
 			if err = core.checkPreSend(data); err != nil {
 				log.Println("[ERROR] check key words: " + err.Error())
-				break
+				return
 			}
 
 			log.Println("Finished send post from ya")
-		}
+		}()
 
-		log.Println("Sleep for one hour")
-		time.Sleep(1 * time.Hour)
+		<-statsTimer.C
 	}
 }
 
@@ -140,7 +143,7 @@ func (core *Core) browser(url string) (string, error) {
 	taskCtx, cancelTask := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
 	defer cancelTask()
 
-	ctx, cancel := context.WithTimeout(taskCtx, 1*time.Minute)
+	ctx, cancel := context.WithTimeout(taskCtx, 2*time.Minute)
 	defer cancel()
 
 	var html string
@@ -205,36 +208,25 @@ func (core *Core) catchPostFromRzn(m map[string]string) (models.Array, error) {
 
 		if html, err = core.browser(k); err != nil {
 			log.Println("[ERROR] catch post from rzn")
-			break
+			continue
 		}
 
 		var doc *goquery.Document
 		if doc, err = goquery.NewDocumentFromReader(strings.NewReader(html)); err != nil {
-			log.Println("[ERROR] catch post from rzn")
-			break
+			return nil, errors.New(err.Error())
 		}
 
 		var (
 			title, link, img string
-			ex               bool
 		)
 
 		doc.Find("#newsContainer > div.row.url-checkpoint.newsItem.story > div.col.story__details > div > div.story__body > div.story__hero > div > img").Each(func(i int, s *goquery.Selection) {
-			img, ex = s.Attr("src")
-			if !ex {
-				log.Println("img not found")
-			}
+			img, _ = s.Attr("src")
 		})
 
 		doc.Find("#newsContainer > div.row.url-checkpoint.newsItem.story").Each(func(i int, s *goquery.Selection) {
-			title, ex = s.Attr("data-title")
-			if !ex {
-				log.Println("title not found")
-			}
-			link, ex = s.Attr("data-url")
-			if !ex {
-				log.Println("link not found")
-			}
+			title, _ = s.Attr("data-title")
+			link, _ = s.Attr("data-url")
 		})
 
 		var (
@@ -256,8 +248,6 @@ func (core *Core) catchPostFromRzn(m map[string]string) (models.Array, error) {
 		post.Image = img
 		post.Link = link
 		data = append(data, &post)
-
-		log.Printf("append post, hash: %v\n", post.Hash)
 
 		time.Sleep(10 * time.Second)
 	}
@@ -314,14 +304,13 @@ func (core *Core) catchPostFromYa(m map[string]string) (models.Array, error) {
 		post := models.Post{}
 
 		if html, err = core.browser(link); err != nil {
-			log.Println("[ERROR] catch post from rzn")
-			break
+			log.Printf("%v\n", err)
+			continue
 		}
 
 		var doc *goquery.Document
 		if doc, err = goquery.NewDocumentFromReader(strings.NewReader(html)); err != nil {
-			log.Println("[ERROR] catch post from rzn")
-			break
+			return nil, errors.New(err.Error())
 		}
 
 		var txt, img string
@@ -335,7 +324,9 @@ func (core *Core) catchPostFromYa(m map[string]string) (models.Array, error) {
 			txt += s.Text()
 			txt = space.ReplaceAllString(txt, " ")
 			txt = all.ReplaceAllString(txt, " ")
+			txt = all.ReplaceAllString("YA62.ru", "")
 			txt = strings.TrimSpace(txt)
+
 		})
 
 		post.Hash = core.getMD5Hash(title)
@@ -345,8 +336,6 @@ func (core *Core) catchPostFromYa(m map[string]string) (models.Array, error) {
 		post.Link = link
 		data = append(data, &post)
 
-		log.Printf("append post, hash: %v\n", post.Hash)
-
 		time.Sleep(10 * time.Second)
 	}
 
@@ -355,7 +344,7 @@ func (core *Core) catchPostFromYa(m map[string]string) (models.Array, error) {
 
 func (core *Core) checkPreSend(arr models.Array) error {
 
-	log.Println("start check key word function")
+	log.Printf("start presend func, length obj: %v\n", len(arr))
 
 	var (
 		keyWord string
@@ -364,39 +353,37 @@ func (core *Core) checkPreSend(arr models.Array) error {
 
 	for _, v := range arr {
 
-		if v.Title == "" || v.Body == "" || v.Image == "" || v.Hash == "" {
-			log.Println("[ERROR] any fields of struct post is not defined")
-			break
+		if v.Title == "" || v.Body == "" || v.Hash == "" || v.Link == "" || v.Image == "" {
+			log.Printf("[ERROR] any fields is not defined %v\n", v.Link)
+			continue
 		}
 
 		if _, err := core.Store.Get(context.Background(), v.Hash).Result(); err == redis.Nil {
-			break
+
+			keyWord = core.findWords(v.Body)
+
+			if len(keyWord) > 0 {
+
+				if err = core.sendToTelegram(*v); err != nil {
+					return err
+				}
+
+				count++
+
+				if err = core.Store.Set(context.Background(), v.Hash, v.Title, 48*time.Hour).Err(); err != nil {
+					return err
+				}
+			}
 		} else if err != nil {
 			return err
-		}
-
-		keyWord = core.findWords(v.Title, v.Body)
-
-		if len(keyWord) > 0 {
-
-			if err := core.senToTelegram(*v); err != nil {
-				return err
-			}
-
-			count++
-
-			if err := core.Store.Set(context.Background(), v.Hash, v.Title, 48*time.Hour).Err(); err != nil {
-				return err
-			}
 		}
 	}
 
 	log.Printf("send %v post to telegram\n", count)
-
 	return nil
 }
 
-func (core *Core) senToTelegram(p models.Post) error {
+func (core *Core) sendToTelegram(p models.Post) error {
 
 	var (
 		botAPI  *tg.BotAPI
@@ -425,23 +412,15 @@ func (core *Core) senToTelegram(p models.Post) error {
 	return nil
 }
 
-// Stop app, shutdown server, close connection
 func (core *Core) Stop() {
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
 
 	if err := core.Store.Close(); err != nil {
 		log.Println(err)
 	}
-
-	if err := core.Server.Shutdown(ctx); err != nil {
-		log.Println(err)
-	}
 }
 
-// findWords find in text a key words
-func (core *Core) findWords(title, body string) string {
+// findWords find in text a keywords
+func (core *Core) findWords(body string) string {
 
 	var whatWords = "гибдд угибдд дпс пдд мчс мвд фсб умвд лиза алерт" +
 		"инспектор автоинспектор полицейски полици пристав" +
@@ -463,18 +442,14 @@ func (core *Core) findWords(title, body string) string {
 		"дождь гроза ветер туман уровень желтый красный опасност" +
 		"заморозки похолода циклон урага снег синопти холод погод"
 
-	Title := strings.Fields(title)
 	Body := strings.Fields(body)
 	What := strings.Fields(whatWords)
 	reg := regexp.MustCompile(`[а-яА-Я]{1,6}`)
 
 	for _, what := range What {
-		for _, title = range Title {
-			for _, body = range Body {
-				if strings.EqualFold(reg.FindString(strings.ToLower(what)), reg.FindString(strings.ToLower(title))) ||
-					strings.EqualFold(reg.FindString(strings.ToLower(what)), reg.FindString(strings.ToLower(body))) {
-					return what
-				}
+		for _, body = range Body {
+			if strings.EqualFold(reg.FindString(strings.ToLower(what)), reg.FindString(strings.ToLower(body))) {
+				return "yes" // what
 			}
 		}
 	}
@@ -485,4 +460,12 @@ func (core *Core) getMD5Hash(s string) string {
 	md := md5.New()
 	md.Write([]byte(s))
 	return hex.EncodeToString(md.Sum(nil))
+}
+
+func (core *Core) mustParseDuration(s string) time.Duration {
+	value, err := time.ParseDuration(s)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return value
 }
