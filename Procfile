@@ -1,1 +1,1 @@
-web: ./bin/analyze-it --port $PORT
+web: ./bin/app --port $PORT

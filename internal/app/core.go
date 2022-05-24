@@ -83,6 +83,13 @@ func (core *Core) Run() {
 				return
 			}
 
+			if rm, err = core.checkLink(rm); err != nil {
+				log.Println("[ERROR] check link: " + err.Error())
+				return
+			}
+
+			log.Printf("check links after from rzn: %v\n", len(rm))
+
 			data := models.Array{}
 			if data, err = core.catchPostFromRzn(rm); err != nil {
 				log.Println("[ERROR] catch post from rzn: " + err.Error())
@@ -93,8 +100,6 @@ func (core *Core) Run() {
 				log.Println("[ERROR] check key words: " + err.Error())
 				return
 			}
-
-			log.Println("Finished send post from rzn")
 		}()
 
 		go func() {
@@ -109,6 +114,13 @@ func (core *Core) Run() {
 				return
 			}
 
+			if ym, err = core.checkLink(ym); err != nil {
+				log.Println("[ERROR] check link: " + err.Error())
+				return
+			}
+
+			log.Printf("check links after from ya: %v\n", len(ym))
+
 			data := models.Array{}
 			if data, err = core.catchPostFromYa(ym); err != nil {
 				log.Println("[ERROR] catch post from ya: " + err.Error())
@@ -119,8 +131,6 @@ func (core *Core) Run() {
 				log.Println("[ERROR] check key words: " + err.Error())
 				return
 			}
-
-			log.Println("Finished send post from ya")
 		}()
 
 		<-statsTimer.C
@@ -148,13 +158,31 @@ func (core *Core) browser(url string) (string, error) {
 
 	var html string
 
-	log.Println("got url " + url)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.OuterHTML("html", &html, chromedp.ByQuery)); err != nil {
 		return "", err
 	}
 	return html, nil
+}
+
+func (core *Core) checkLink(m map[string]string) (map[string]string, error) {
+
+	mp := make(map[string]string)
+	var hash string
+
+	for k, v := range m {
+
+		hash = core.getMD5Hash(k)
+
+		if _, err := core.Store.Get(context.Background(), hash).Result(); err == redis.Nil {
+			mp[k] = v
+		} else if err != nil {
+			return nil, err
+		}
+	}
+
+	return mp, nil
 }
 
 func (core *Core) getLinkRzn() (map[string]string, error) {
@@ -168,8 +196,6 @@ func (core *Core) getLinkRzn() (map[string]string, error) {
 		err  error
 	)
 	m := make(map[string]string)
-
-	log.Println("send url " + core.Config.(*config.Configuration).RznUrl)
 
 	if html, err = core.browser(core.Config.(*config.Configuration).RznUrl); err != nil {
 		return nil, err
@@ -190,8 +216,6 @@ func (core *Core) getLinkRzn() (map[string]string, error) {
 }
 
 func (core *Core) catchPostFromRzn(m map[string]string) (models.Array, error) {
-
-	log.Println("start catch posts from rzn")
 
 	reg := regexp.MustCompile(`\s+`)
 
@@ -268,7 +292,6 @@ func (core *Core) getLinkYa() (map[string]string, error) {
 
 	m := make(map[string]string)
 
-	log.Println("send url " + core.Config.(*config.Configuration).YaUrl)
 	if html, err = core.browser(core.Config.(*config.Configuration).YaUrl); err != nil {
 		return nil, err
 	}
@@ -344,8 +367,6 @@ func (core *Core) catchPostFromYa(m map[string]string) (models.Array, error) {
 
 func (core *Core) checkPreSend(arr models.Array) error {
 
-	log.Printf("start presend func, length obj: %v\n", len(arr))
-
 	var (
 		keyWord string
 		count   int
@@ -354,7 +375,6 @@ func (core *Core) checkPreSend(arr models.Array) error {
 	for _, v := range arr {
 
 		if v.Title == "" || v.Body == "" || v.Hash == "" || v.Link == "" || v.Image == "" {
-			log.Printf("[ERROR] any fields is not defined %v\n", v.Link)
 			continue
 		}
 
@@ -378,8 +398,7 @@ func (core *Core) checkPreSend(arr models.Array) error {
 			return err
 		}
 	}
-
-	log.Printf("send %v post to telegram\n", count)
+	log.Printf("send to channel %v posts \n", count)
 	return nil
 }
 
@@ -413,7 +432,6 @@ func (core *Core) sendToTelegram(p models.Post) error {
 }
 
 func (core *Core) Stop() {
-
 	if err := core.Store.Close(); err != nil {
 		log.Println(err)
 	}
