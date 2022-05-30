@@ -83,13 +83,6 @@ func (core *Core) Run() {
 				return
 			}
 
-			if rm, err = core.checkLink(rm); err != nil {
-				log.Println("[ERROR] check link: " + err.Error())
-				return
-			}
-
-			log.Printf("check links after from rzn: %v\n", len(rm))
-
 			data := models.Array{}
 			if data, err = core.catchPostFromRzn(rm); err != nil {
 				log.Println("[ERROR] catch post from rzn: " + err.Error())
@@ -113,13 +106,6 @@ func (core *Core) Run() {
 			if len(ym) == 0 {
 				return
 			}
-
-			if ym, err = core.checkLink(ym); err != nil {
-				log.Println("[ERROR] check link: " + err.Error())
-				return
-			}
-
-			log.Printf("check links after from ya: %v\n", len(ym))
 
 			data := models.Array{}
 			if data, err = core.catchPostFromYa(ym); err != nil {
@@ -164,26 +150,6 @@ func (core *Core) browser(url string) (string, error) {
 		return "", err
 	}
 	return html, nil
-}
-
-func (core *Core) checkLink(m map[string]string) (map[string]string, error) {
-
-	var (
-		hash string
-		err  error
-	)
-
-	mp := make(map[string]string)
-
-	for k, v := range m {
-		hash = core.getMD5Hash(k)
-		if _, err = core.Store.Get(context.Background(), hash).Result(); err == redis.Nil {
-			mp[k] = v
-		} else if err != nil {
-			return nil, err
-		}
-	}
-	return mp, nil
 }
 
 func (core *Core) getLinkRzn() (map[string]string, error) {
@@ -383,8 +349,6 @@ func (core *Core) checkPreSend(arr models.Array) error {
 			//keyWord = core.findWords(v.Body)
 
 			//if len(keyWord) > 0 {
-
-			time.Sleep(1 * time.Second)
 
 			if err = core.sendToTelegram(*v); err != nil {
 				return err
