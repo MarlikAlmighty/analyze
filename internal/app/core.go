@@ -168,20 +168,21 @@ func (core *Core) browser(url string) (string, error) {
 
 func (core *Core) checkLink(m map[string]string) (map[string]string, error) {
 
+	var (
+		hash string
+		err  error
+	)
+
 	mp := make(map[string]string)
-	var hash string
 
 	for k, v := range m {
-
 		hash = core.getMD5Hash(k)
-
-		if _, err := core.Store.Get(context.Background(), hash).Result(); err == redis.Nil {
+		if _, err = core.Store.Get(context.Background(), hash).Result(); err == redis.Nil {
 			mp[k] = v
 		} else if err != nil {
 			return nil, err
 		}
 	}
-
 	return mp, nil
 }
 
@@ -347,9 +348,8 @@ func (core *Core) catchPostFromYa(m map[string]string) (models.Array, error) {
 			txt += s.Text()
 			txt = space.ReplaceAllString(txt, " ")
 			txt = all.ReplaceAllString(txt, " ")
-			txt = all.ReplaceAllString("YA62.ru", "")
+			txt = strings.Replace(txt, "YA62.ru", "", 3)
 			txt = strings.TrimSpace(txt)
-
 		})
 
 		post.Hash = core.getMD5Hash(title)
@@ -368,8 +368,8 @@ func (core *Core) catchPostFromYa(m map[string]string) (models.Array, error) {
 func (core *Core) checkPreSend(arr models.Array) error {
 
 	var (
-		keyWord string
-		count   int
+		// keyWord string
+		count int
 	)
 
 	for _, v := range arr {
@@ -380,20 +380,22 @@ func (core *Core) checkPreSend(arr models.Array) error {
 
 		if _, err := core.Store.Get(context.Background(), v.Hash).Result(); err == redis.Nil {
 
-			keyWord = core.findWords(v.Body)
+			//keyWord = core.findWords(v.Body)
 
-			if len(keyWord) > 0 {
+			//if len(keyWord) > 0 {
 
-				if err = core.sendToTelegram(*v); err != nil {
-					return err
-				}
+			time.Sleep(1 * time.Second)
 
-				count++
-
-				if err = core.Store.Set(context.Background(), v.Hash, v.Title, 48*time.Hour).Err(); err != nil {
-					return err
-				}
+			if err = core.sendToTelegram(*v); err != nil {
+				return err
 			}
+
+			count++
+
+			if err = core.Store.Set(context.Background(), v.Hash, v.Title, 48*time.Hour).Err(); err != nil {
+				return err
+			}
+			//	}
 		} else if err != nil {
 			return err
 		}
