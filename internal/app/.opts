@@ -1,0 +1,54 @@
+package app
+
+import "github.com/chromedp/chromedp"
+
+func rznOpts() []chromedp.ExecAllocatorOption {
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.NoDefaultBrowserCheck,
+		chromedp.Flag("headless", true),
+		chromedp.Flag("blink-settings", "imagesEnabled=false"),
+		chromedp.Flag("ignore-certificate-errors", true),
+		chromedp.Flag("authority", "rzn.info"),
+		chromedp.Flag("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9"),
+		chromedp.Flag("accept-language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"),
+		chromedp.Flag("cache-control", "no-cache"),
+		chromedp.Flag("cookie", "XSRF-TOKEN=88pBJ1hLsp5p5EOgfXXvxjqT3XihMen3L8QkFi0J; rzninfo_session=1eFyjo1eTarnc0QKwdsr8q3aumvC2ULXd8H3lhV5; tmr_lvid=7a376f8fd4623efc3db273922d835687; tmr_lvidTS=1674769950132; _gid=GA1.2.1845806057.1674769950; _ym_uid=1674769950833812709; _ym_d=1674769950; _grf_vis=1; _grf_uid=1534284970; _grf_cm=1; _ym_isad=2; chash=XPIbNMM7Vg; adtech_uid=7560a927-96a5-4e47-bdb5-d2cb249b7943%3Arzn.info; top100_id=t1.7627570.382619791.1674769970893; _ohmybid_cmf=2; popupCookie=submited; _gat=1; _gat_newTracker=1; _ga_FLHB1SLDEJ=GS1.1.1674838850.8.1.1674838864.0.0.0; _ga=GA1.2.565078563.1674769950; cto_bundle=HphqcF94U3A2Qmc1QmV0bzZEb1JoYmxjcXRYaWZhNmY5VjVtRkY0ZGptczR3M1RjV0EyRXdWUEwlMkZqaUNicUV0VlA2QTZydkRFekolMkJpaWlWNlp1dlZDcmxIMENYJTJGVVdhcSUyRkJPZUY3anVwZDNoUFJ2Z3RPcTVxeSUyRklNMFJkNjUwT3A5WjF1elV3RlNuaEUzSll4aXhTRWhCNEtBJTNEJTNE; tmr_detect=0%7C1674838869485; last_visit=1674828084250%3A%3A1674838884250; t3_sid_7627570=s1.1586239044.1674838870070.1674838898452.2.5; XSRF-TOKEN=88pBJ1hLsp5p5EOgfXXvxjqT3XihMen3L8QkFi0J; rzninfo_session=1eFyjo1eTarnc0QKwdsr8q3aumvC2ULXd8H3lhV5"),
+		chromedp.Flag("pragma", "no-cache"),
+		chromedp.Flag("referer", "https://rzn.info/"),
+		chromedp.Flag("sec-ch-ua", "\"Not_A Brand\";v=\"99\", \"Google Chrome\";v=\"109\", \"Chromium\";v=\"109\""),
+		chromedp.Flag("sec-ch-ua-mobile", "?0"),
+		chromedp.Flag("sec-ch-ua-platform", "\"Linux\""),
+		chromedp.Flag("sec-fetch-dest", "document"),
+		chromedp.Flag("sec-fetch-mode", "navigate"),
+		chromedp.Flag("sec-fetch-site", "same-origin"),
+		chromedp.Flag("sec-fetch-user", "?1"),
+		chromedp.Flag("upgrade-insecure-requests", "1"),
+		chromedp.Flag("user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"),
+	)
+	return opts
+}
+
+func yaOpts() []chromedp.ExecAllocatorOption {
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.NoDefaultBrowserCheck,
+		chromedp.Flag("headless", true),
+		chromedp.Flag("blink-settings", "imagesEnabled=false"),
+		chromedp.Flag("ignore-certificate-errors", true),
+		chromedp.Flag("authority", "ya62.ru"),
+		chromedp.Flag("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9"),
+		chromedp.Flag("accept-language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"),
+		chromedp.Flag("cache-control", "max-age=0"),
+		chromedp.Flag("cookie", "__ddg1_=jkrGO1Hiz68Rq5lxScJL; BX_USER_ID=0ab3e778aebb24667da42ad9960c47f6; PHPSESSID=edRgvpmygNqUM2J3nwYxSdRRdObStciq; BITRIX_SM_BANNERS=1_31_6_04022023%2C1_32_3_04022023%2C1_40_6_04022023%2C1_45_6_04022023%2C1_88_6_04022023; BITRIX_CONVERSION_CONTEXT_s1=%7B%22ID%22%3A34%2C%22EXPIRE%22%3A1674939540%2C%22UNIQUE%22%3A%5B%22conversion_visit_day%22%5D%7D; _ym_uid=1674866119533751577; _ym_d=1674866119; _grf_vis=1; _grf_ref=www.google.com; _ym_visorc=b; _ym_isad=1; _grf_uid=1534284970; _grf_cm=1; __ddgid_=prb9Wi3vlKiBApNe; __ddgmark_=h3fkI2rETTPCjfHO; __ddg5_=MiLjHDSqNysLd4p9; __ddg2_=fCTm8wy0LbH6Up49; __ddg3=673g5BeOeQ9eoN8Q"),
+		chromedp.Flag("referer", "https://ya62.ru/news/incidents/"),
+		chromedp.Flag("sec-ch-ua", "\"Not_A Brand\";v=\"99\", \"Google Chrome\";v=\"109\", \"Chromium\";v=\"109\""),
+		chromedp.Flag("sec-ch-ua-mobile", "?0"),
+		chromedp.Flag("sec-ch-ua-platform", "\"Linux\""),
+		chromedp.Flag("sec-fetch-dest", "document"),
+		chromedp.Flag("sec-fetch-mode", "navigate"),
+		chromedp.Flag("sec-fetch-site", "same-origin"),
+		chromedp.Flag("sec-fetch-user", "?1"),
+		chromedp.Flag("upgrade-insecure-requests", "1"),
+		chromedp.Flag("user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"),
+	)
+	return opts
+}

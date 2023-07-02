@@ -1,29 +1,23 @@
 package app
 
 import (
-	"context"
 	"crypto/md5"
-	"encoding/hex"
-	"errors"
+	"encoding/json"
 	"fmt"
-	"github.com/go-redis/redis/v8"
 	"log"
-	"regexp"
-	"strconv"
-	"strings"
 	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"github.com/MarlikAlmighty/analyze-it/internal/config"
 	"github.com/MarlikAlmighty/analyze-it/internal/models"
-	"github.com/PuerkitoBio/goquery"
-	"github.com/chromedp/chromedp"
-	tg "gopkg.in/telegram-bot-api.v4"
+	"github.com/sclevine/agouti"
 )
 
 // Core application
 type Core struct {
-	Config Config `config:"-"`
-	Store  Store  `store:"-"`
+	Config *config.Configuration `config:"-"`
+	Store  Store                 `store:"-"`
 }
 
 // New application app initialization
@@ -38,23 +32,22 @@ type (
 	App interface {
 		Run()
 		Stop()
-		getLinkRzn() (map[string]string, error)
-		catchPostFromRzn(m map[string]string) (*models.Array, error)
-		getLinkYa() (map[string]string, error)
-		catchPostFromYa(m map[string]string) (models.Array, error)
-		checkLink(m map[string]string) (map[string]string, error)
-		checkPreSend(arr models.Array) error
-		findWords(title, body string) string
-		sendToTelegram(p models.Post) error
-		browser(url string) (string, error)
-		createMD5Hash(s string) string
+		//browser(opts []chromedp.ExecAllocatorOption, url string) (string, error)
+		checkPreSend(v models.Post) error
+		checkBlank(v *models.Post) bool
+		sendToModerChannel(p *models.Post) error
+		stringToHash(s string) string
 		mustParseDuration(s string) time.Duration
-	}
-	Config interface {
+		getLinkRzn(html string) (map[string]string, error)
+		catchPostFromRzn(html string) (models.Post, error)
+		getLinkYa(html string) (map[string]string, error)
+		catchPostFromYa(html, link string) (models.Post, error)
 	}
 	Store interface {
-		Get(ctx context.Context, key string) *redis.StringCmd
-		Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
+		Write(bucket, key string, value []byte) error
+		Read(bucket, key string) ([]byte, error)
+		Sweep(maxAge time.Duration) error
+		GetExpired(maxAge time.Duration) ([][]byte, error)
 		Close() error
 	}
 )
@@ -63,387 +56,229 @@ func (core *Core) Run() {
 
 	statsInt := core.mustParseDuration("1h")
 	statsTimer := time.NewTimer(statsInt)
-	rm := make(map[string]string)
-	ym := make(map[string]string)
-	var err error
+	mp := make(map[string]string)
+
+	var (
+		page *agouti.Page
+		post models.Post
+		html string
+		err  error
+	)
+
+	// init driver
+	driver := agouti.ChromeDriver(
+		agouti.ChromeOptions("args", []string{"--headless", "--disable-gpu", "--no-sandbox"}),
+	)
+
+	// ttl all posts
+	maxAge := 168 * time.Hour
 
 	for {
 
 		statsTimer.Reset(statsInt)
 
-		go func() {
-
-			if rm, err = core.getLinkRzn(); err != nil {
-				log.Println("[ERROR] get link from rzn: " + err.Error())
-				return
-			}
-
-			log.Printf("got links from rzn: %v\n", len(rm))
-			if len(rm) == 0 {
-				return
-			}
-
-			data := models.Array{}
-			if data, err = core.catchPostFromRzn(rm); err != nil {
-				log.Println("[ERROR] catch post from rzn: " + err.Error())
-				return
-			}
-
-			if err = core.checkPreSend(data); err != nil {
-				log.Println("[ERROR] check key words: " + err.Error())
+		func() {
+			log.Println("start clear database")
+			if err = core.Store.Sweep(maxAge); err != nil {
+				log.Printf("error sweep: %v\n", err)
 				return
 			}
 		}()
 
-		go func() {
+		if err = driver.Start(); err != nil {
+			log.Printf("error driver start: %v\n", err)
+			return
+		}
 
-			if ym, err = core.getLinkYa(); err != nil {
-				log.Printf("[ERROR] get link from ya: " + err.Error())
+		if page, err = driver.NewPage(); err != nil {
+			log.Printf("error new page: %v\n", err)
+			return
+		}
+
+		func() {
+
+			log.Println("start parsing rzn.info")
+
+			if err = page.Navigate(core.Config.RznUrl); err != nil {
+				log.Println("[RZN]: error got main page: " + err.Error())
 				return
 			}
 
-			log.Printf("got links from ya: %v\n", len(ym))
-			if len(ym) == 0 {
+			if html, err = page.HTML(); err != nil {
+				log.Println("[RZN]: error got html: " + err.Error())
 				return
 			}
 
-			data := models.Array{}
-			if data, err = core.catchPostFromYa(ym); err != nil {
-				log.Println("[ERROR] catch post from ya: " + err.Error())
+			// got all links
+			if mp, err = core.getLinkRzn(html); err != nil {
+				log.Println("[RZN]: error got links from rzn: " + err.Error())
 				return
 			}
 
-			if err = core.checkPreSend(data); err != nil {
-				log.Println("[ERROR] check key words: " + err.Error())
-				return
+			// range for links
+			for url := range mp {
+
+				time.Sleep(10 * time.Second)
+
+				if err = page.Navigate(url); err != nil {
+					log.Println("[RZN]: error got links page: " + err.Error())
+					continue
+				}
+
+				if html, err = page.HTML(); err != nil {
+					log.Println("[RZN]: error got html: " + err.Error())
+					return
+				}
+
+				// catch title, post, image from link
+				if post, err = core.catchPostFromRzn(html); err != nil {
+					log.Println("[RZN]: error catch post from rzn: " + err.Error())
+					continue
+				}
+
+				// check and send post
+				if err = core.checkPreSend(post); err != nil {
+					log.Println("[RZN]: sender error: " + err.Error())
+					continue
+				}
 			}
 		}()
+
+		func() {
+
+			log.Println("start parsing ya62.ru")
+
+			// get start page ya62.ru/news/incidents/
+			if err = page.Navigate(core.Config.YaUrl); err != nil {
+				log.Println("[YA62]: error got main page: " + err.Error())
+				return
+			}
+
+			if html, err = page.HTML(); err != nil {
+				log.Println("[YA62]: error got html: " + err.Error())
+				return
+			}
+
+			// got all links
+			if mp, err = core.getLinkYa(html); err != nil {
+				log.Printf("[YA62]: error got link from ya: " + err.Error())
+				return
+			}
+
+			// range for links
+			for url := range mp {
+
+				time.Sleep(10 * time.Second)
+
+				if err = page.Navigate(url); err != nil {
+					log.Println("[YA62]: error got main page: " + err.Error())
+					return
+				}
+
+				if html, err = page.HTML(); err != nil {
+					log.Println("[YA62]: error got html: " + err.Error())
+					return
+				}
+
+				// catch title, post, image from link
+				if post, err = core.catchPostFromYa(html, url); err != nil {
+					log.Println("[YA62]: error catch post from ya: " + err.Error())
+					continue
+				}
+
+				// check and send post
+				if err = core.checkPreSend(post); err != nil {
+					log.Println("[YA62]: sender error: " + err.Error())
+					continue
+				}
+			}
+		}()
+
+		log.Println("Timeout 1 hour...")
+
+		if err = driver.Stop(); err != nil {
+			log.Printf("error driver stop: %v\n", err)
+		}
 
 		<-statsTimer.C
 	}
 }
 
-func (core *Core) browser(url string) (string, error) {
-
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.NoDefaultBrowserCheck,
-		chromedp.Flag("headless", false),
-		chromedp.Flag("ignore-certificate-errors", true),
-		chromedp.Flag("window-size", "1,1"),
-		chromedp.Flag("blink-settings", "imagesEnabled=false"),
-	)
-
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
-	defer cancelAlloc()
-
-	taskCtx, cancelTask := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
-	defer cancelTask()
-
-	ctx, cancel := context.WithTimeout(taskCtx, 2*time.Minute)
-	defer cancel()
-
-	var html string
-
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(url),
-		chromedp.OuterHTML("html", &html, chromedp.ByQuery)); err != nil {
-		return "", err
-	}
-	return html, nil
-}
-
-func (core *Core) getLinkRzn() (map[string]string, error) {
-
-	if core.Config.(*config.Configuration).RznUrl == "" {
-		return nil, errors.New("error get RZN URL from env")
-	}
+func (core *Core) checkPreSend(v models.Post) error {
 
 	var (
-		html string
-		err  error
-	)
-	m := make(map[string]string)
-
-	if html, err = core.browser(core.Config.(*config.Configuration).RznUrl); err != nil {
-		return nil, err
-	}
-
-	var doc *goquery.Document
-	if doc, err = goquery.NewDocumentFromReader(strings.NewReader(html)); err != nil {
-		return nil, err
-	}
-
-	doc.Find("#news-container > .stories .stories-item__title > a").Each(func(i int, s *goquery.Selection) {
-		link, _ := s.Attr("href")
-		title := s.Text()
-		m[link] = title
-	})
-
-	return m, nil
-}
-
-func (core *Core) catchPostFromRzn(m map[string]string) (models.Array, error) {
-
-	reg := regexp.MustCompile(`\s+`)
-
-	data := models.Array{}
-
-	var (
-		html string
-		err  error
+		b   []byte
+		err error
 	)
 
-	for k := range m {
-
-		post := models.Post{}
-
-		if html, err = core.browser(k); err != nil {
-			log.Println("[ERROR] catch post from rzn")
-			continue
-		}
-
-		var doc *goquery.Document
-		if doc, err = goquery.NewDocumentFromReader(strings.NewReader(html)); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		var (
-			title, link, img string
-		)
-
-		doc.Find("#newsContainer > div.row.url-checkpoint.newsItem.story > div.col.story__details > div > div.story__body > div.story__hero > div > img").Each(func(i int, s *goquery.Selection) {
-			img, _ = s.Attr("src")
-		})
-
-		doc.Find("#newsContainer > div.row.url-checkpoint.newsItem.story").Each(func(i int, s *goquery.Selection) {
-			title, _ = s.Attr("data-title")
-			link, _ = s.Attr("data-url")
-		})
-
-		var (
-			str  []string
-			body string
-			txt  string
-		)
-
-		doc.Find("#newsContainer > div.row.url-checkpoint.newsItem.story > div.col.story__details > div > div.story__body > div:nth-child(3)").Each(func(i int, s *goquery.Selection) {
-			txt = s.Text()
-			newTxt := reg.ReplaceAllString(txt, " ")
-			str = append(str, newTxt)
-		})
-
-		body = strings.Join(str, "")
-		post.Hash = core.getMD5Hash(title)
-		post.Title = title
-		post.Body = body
-		post.Image = img
-		post.Link = link
-		data = append(data, &post)
-
-		time.Sleep(10 * time.Second)
+	// checking for missing fields in a structure
+	if core.checkBlank(&v) {
+		return nil
 	}
 
-	return data, nil
-}
-
-func (core *Core) getLinkYa() (map[string]string, error) {
-
-	if core.Config.(*config.Configuration).YaUrl == "" {
-		return nil, errors.New("error get YA URL from env")
+	// read from the database post with this hash
+	b, err = core.Store.Read("posts", v.Hash)
+	if err != nil {
+		return err
 	}
 
-	var (
-		html string
-		err  error
-	)
-
-	m := make(map[string]string)
-
-	if html, err = core.browser(core.Config.(*config.Configuration).YaUrl); err != nil {
-		return nil, err
-	}
-
-	var doc *goquery.Document
-	if doc, err = goquery.NewDocumentFromReader(strings.NewReader(html)); err != nil {
-		return nil, err
-	}
-	doc.Find("div.item a.subject").Each(func(i int, s *goquery.Selection) {
-		link, _ := s.Attr("href")
-		hyperlink := "https://ya62.ru" + link
-		title := s.Text()
-		m[hyperlink] = title
-	})
-
-	return m, nil
-}
-
-func (core *Core) catchPostFromYa(m map[string]string) (models.Array, error) {
-
-	space := regexp.MustCompile(`[[:space:]]`)
-	all := regexp.MustCompile(`\s+`)
-
-	data := models.Array{}
-
-	var (
-		html string
-		err  error
-	)
-
-	for link, title := range m {
-
-		post := models.Post{}
-
-		if html, err = core.browser(link); err != nil {
-			log.Printf("%v\n", err)
-			continue
+	// there is no such post, send to the moderator channel
+	if len(b) == 0 {
+		if err = core.sendToModerChannel(&v); err != nil {
+			return err
 		}
 
-		var doc *goquery.Document
-		if doc, err = goquery.NewDocumentFromReader(strings.NewReader(html)); err != nil {
-			return nil, errors.New(err.Error())
+		// marshal post
+		var post []byte
+		if post, err = json.Marshal(v); err != nil {
+			return err
 		}
 
-		var txt, img string
-
-		doc.Find("figure > img").Each(func(i int, s *goquery.Selection) {
-			img, _ = s.Attr("data-lrg")
-			img = "https://ya62.ru" + img
-		})
-
-		doc.Find("div.news-detail p").Each(func(i int, s *goquery.Selection) {
-			txt += s.Text()
-			txt = space.ReplaceAllString(txt, " ")
-			txt = all.ReplaceAllString(txt, " ")
-			txt = strings.Replace(txt, "YA62.ru", "", 3)
-			txt = strings.TrimSpace(txt)
-		})
-
-		post.Hash = core.getMD5Hash(title)
-		post.Title = title
-		post.Body = txt
-		post.Image = img
-		post.Link = link
-		data = append(data, &post)
-
-		time.Sleep(10 * time.Second)
-	}
-
-	return data, nil
-}
-
-func (core *Core) checkPreSend(arr models.Array) error {
-
-	var (
-		// keyWord string
-		count int
-	)
-
-	for _, v := range arr {
-
-		if v.Title == "" || v.Body == "" || v.Hash == "" || v.Link == "" || v.Image == "" {
-			continue
+		// write post to database
+		if err = core.Store.Write("posts", v.Hash, post); err != nil {
+			return err
 		}
 
-		if _, err := core.Store.Get(context.Background(), v.Hash).Result(); err == redis.Nil {
-
-			//keyWord = core.findWords(v.Body)
-
-			//if len(keyWord) > 0 {
-
-			if err = core.sendToTelegram(*v); err != nil {
-				return err
-			}
-
-			count++
-
-			if err = core.Store.Set(context.Background(), v.Hash, v.Title, 48*time.Hour).Err(); err != nil {
-				return err
-			}
-			//	}
-		} else if err != nil {
+		// writing ttl posts to database
+		if err = core.Store.Write("ttl", time.Now().UTC().Format(time.RFC3339Nano),
+			[]byte(v.Hash)); err != nil {
 			return err
 		}
 	}
-	log.Printf("send to channel %v posts \n", count)
 	return nil
 }
 
-func (core *Core) sendToTelegram(p models.Post) error {
-
+func (core *Core) sendToModerChannel(p *models.Post) error {
 	var (
-		botAPI  *tg.BotAPI
-		channel int64
-		err     error
+		botAPI *tgbotapi.BotAPI
+		err    error
 	)
-
-	if channel, err = strconv.ParseInt(core.Config.(*config.Configuration).Channel, 10, 64); err != nil {
+	if botAPI, err = tgbotapi.NewBotAPI(core.Config.BotToken); err != nil {
 		return err
 	}
-
-	if botAPI, err = tg.NewBotAPI(core.Config.(*config.Configuration).BotToken); err != nil {
-		log.Fatalln(err)
-	}
-
 	text := fmt.Sprintf("<b>%s</b> \n\n %s \n <a href='%s'>&#8203;</a>", p.Title, p.Body, p.Image)
-
-	msg := tg.NewMessage(channel, text)
-
+	msg := tgbotapi.NewMessage(core.Config.ModeratorChannel, text)
 	msg.ParseMode = "HTML"
-
+	mp := [][]string{
+		{"Post", p.Hash},
+		{"Remove", "Remove"},
+	}
+	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(mp))
+	for _, value := range mp {
+		row := tgbotapi.NewInlineKeyboardRow()
+		row = append(row, tgbotapi.NewInlineKeyboardButtonData(value[0], value[1]))
+		rows = append(rows, row)
+	}
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
+	msg.ReplyMarkup = &keyboard
 	if _, err = botAPI.Send(msg); err != nil {
 		return err
 	}
-
 	return nil
 }
 
-func (core *Core) Stop() {
-	if err := core.Store.Close(); err != nil {
-		log.Println(err)
-	}
-}
-
-// findWords find in text a keywords
-func (core *Core) findWords(body string) string {
-
-	var whatWords = "гибдд угибдд дпс пдд мчс мвд фсб умвд лиза алерт" +
-		"инспектор автоинспектор полицейски полици пристав" +
-		"суд осуд осуж уголовн оштрафо штраф арест взятк коррупци беспредел" +
-		"пропажа пропа приговор ищут поиск розыск разыскива" +
-		"дтп авари столкновени столкнул врезал протаранил протаранивш притё угон обго угнал" +
-		"опрокинул вылете опрокидыв перевернул провали перелет улёт улет влете обогн" +
-		"обрушивш рухнул снёс снес въехал падени упа сбил травм м5 м6" +
-		"бомб снаряд оружи боеприпа минирова укус рейд взрыв взорвал" +
-		"смертельн пропал упал выпа эвакуа утону утоп смыл затопил сгоре" +
-		"пожар загорел сгорел возгоран гори горело горела оборва прорвал" +
-		"убий гибел убил зареза скончал борьб драк побоищ отрави" +
-		"изби расстерзал разорвал расстреля подрал нарко загрыз" +
-		"тело труп мёртвы мёртво мертво мертве умер поги гибел гибн" +
-		"напал нападени разборк преследова сбежав сбежал" +
-		"ограб грабит разбой разбойни мошенн обманул фальшив краж укра" +
-		"вскры взлома насил изнасил бешенств нетрезв пьян рязан" +
-		"протест забастов бастовал пострада подозрит проституц проститут" +
-		"дождь гроза ветер туман уровень желтый красный опасност" +
-		"заморозки похолода циклон урага снег синопти холод погод"
-
-	Body := strings.Fields(body)
-	What := strings.Fields(whatWords)
-	reg := regexp.MustCompile(`[а-яА-Я]{1,6}`)
-
-	for _, what := range What {
-		for _, body = range Body {
-			if strings.EqualFold(reg.FindString(strings.ToLower(what)), reg.FindString(strings.ToLower(body))) {
-				return "yes" // what
-			}
-		}
-	}
-	return ""
-}
-
-func (core *Core) getMD5Hash(s string) string {
-	md := md5.New()
-	md.Write([]byte(s))
-	return hex.EncodeToString(md.Sum(nil))
+func (core *Core) stringToHash(s string) string {
+	return fmt.Sprintf("%x", md5.Sum([]byte(s)))
 }
 
 func (core *Core) mustParseDuration(s string) time.Duration {
@@ -452,4 +287,17 @@ func (core *Core) mustParseDuration(s string) time.Duration {
 		log.Fatal(err)
 	}
 	return value
+}
+
+func (core *Core) checkBlank(v *models.Post) bool {
+	if v.Title == "" || v.Body == "" || v.Hash == "" || v.Link == "" || v.Image == "" {
+		return true
+	}
+	return false
+}
+
+func (core *Core) Stop() {
+	if err := core.Store.Close(); err != nil {
+		log.Println(err)
+	}
 }

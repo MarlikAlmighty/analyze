@@ -45,7 +45,7 @@ func (s *Store) Get(ctx context.Context, key string) *redis.StringCmd {
 }
 
 func (s *Store) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
-	return s.Client.Set(ctx, key, value, time.Duration(48*time.Hour))
+	return s.Client.Set(ctx, key, value, 48*time.Hour)
 }
 
 // Close closing the connection

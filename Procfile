@@ -1,1 +1,0 @@
-web: ./bin/app --port $PORT

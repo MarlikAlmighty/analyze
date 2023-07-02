@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/MarlikAlmighty/analyze-it/internal/botapi"
 	"log"
 	"os"
 	"os/signal"
@@ -13,23 +14,38 @@ import (
 
 func main() {
 
-	cnf := config.New()
-	if err := cnf.GetEnv(); err != nil {
-		log.Fatalf("get environment keys: %v\n", err)
+	// got config
+	cnf, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("error config: %v\n", err)
 	}
 
-	s := store.New()
-	r, err := s.Connect(cnf.RedisUrl)
-	if err != nil {
-		log.Fatalf("connect: %v\n", err)
+	// connect to store
+	var r *store.Wrapper
+	if r, err = r.New("posts", "ttl"); err != nil {
+		log.Fatalf("error store: %v\n", err)
 	}
-	s.Client = r
+
+	// init bot api
+	var api *botapi.TgAPI
+	if api, err = botapi.New(cnf, r); err != nil {
+		log.Fatalf("error botAPI: %s\n", err)
+	}
+
+	// start bot
+	go func() {
+		if err = api.Run(); err != nil {
+			log.Fatalf("error run botAPI: %s\n", err)
+			return
+		}
+	}()
+
+	// init and run core
+	core := app.New(cnf, r)
+	go core.Run()
 
 	stopApp := make(chan os.Signal, 1)
 	signal.Notify(stopApp, syscall.SIGKILL, syscall.SIGINT, syscall.SIGTERM)
-
-	core := app.New(cnf, s)
-	go core.Run()
 
 	sig := <-stopApp
 	log.Printf("Catch signal %s, exit app...", sig)
