@@ -1,10 +1,6 @@
 package config
 
-import (
-	"encoding/json"
-	"io"
-	"os"
-)
+import "github.com/kelseyhightower/envconfig"
 
 // Configuration of app
 type Configuration struct {
@@ -15,13 +11,26 @@ type Configuration struct {
 	ModeratorChannel int64  `required:"true" split_words:"true"`
 }
 
+func New() *Configuration {
+	return &Configuration{}
+}
+
+// GetEnv configuration init
+func (cnf *Configuration) GetEnv() error {
+	if err := envconfig.Process("", cnf); err != nil {
+		return err
+	}
+	return nil
+}
+
+/*
 // LoadConfig load configuration from file
 func LoadConfig() (*Configuration, error) {
 	var (
 		jsonFile *os.File
 		err      error
 	)
-	if jsonFile, err = os.Open("config.json"); err != nil {
+	if jsonFile, err = os.Open("./config.json"); err != nil {
 		return nil, err
 	}
 	var b []byte
@@ -34,3 +43,4 @@ func LoadConfig() (*Configuration, error) {
 	}
 	return conf, err
 }
+*/

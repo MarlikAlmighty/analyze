@@ -14,15 +14,17 @@ import (
 
 func main() {
 
+	var err error
+
 	// got config
-	cnf, err := config.LoadConfig()
-	if err != nil {
+	cnf := config.New()
+	if err = cnf.GetEnv(); err != nil {
 		log.Fatalf("error config: %v\n", err)
 	}
 
 	// connect to store
 	var r *store.Wrapper
-	if r, err = r.New("posts", "ttl"); err != nil {
+	if r, err = r.New(); err != nil {
 		log.Fatalf("error store: %v\n", err)
 	}
 

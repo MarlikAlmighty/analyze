@@ -35,14 +35,12 @@ func (core *Core) getLinkRzn(html string) (map[string]string, error) {
 
 func (core *Core) catchPostFromRzn(html string) (models.Post, error) {
 
-	reg := regexp.MustCompile(`\s+`)
+	dote := regexp.MustCompile(`\.`)
 
 	var (
-		title, link, img string
-		err              error
+		post models.Post
+		err  error
 	)
-
-	post := models.Post{}
 
 	var doc *goquery.Document
 	if doc, err = goquery.NewDocumentFromReader(strings.NewReader(html)); err != nil {
@@ -50,32 +48,19 @@ func (core *Core) catchPostFromRzn(html string) (models.Post, error) {
 	}
 
 	doc.Find("#newsContainer > div.row.url-checkpoint.newsItem.story > div.col.story__details > div > div.story__body > div.story__hero > div > img").Each(func(i int, s *goquery.Selection) {
-		img, _ = s.Attr("src")
+		post.Image, _ = s.Attr("src")
 	})
 
 	doc.Find("#newsContainer > div.row.url-checkpoint.newsItem.story").Each(func(i int, s *goquery.Selection) {
-		title, _ = s.Attr("data-title")
-		link, _ = s.Attr("data-url")
+		post.Title, _ = s.Attr("data-title")
+		post.Link, _ = s.Attr("data-url")
 	})
-
-	var (
-		str  []string
-		body string
-		txt  string
-	)
 
 	doc.Find("#newsContainer > div.row.url-checkpoint.newsItem.story > div.col.story__details > div > div.story__body > div:nth-child(3)").Each(func(i int, s *goquery.Selection) {
-		txt = s.Text()
-		newTxt := reg.ReplaceAllString(txt, " ")
-		str = append(str, newTxt)
+		post.Body = dote.ReplaceAllString(s.Text(), ". ")
 	})
 
-	body = strings.Join(str, "")
-	post.Hash = core.stringToHash(title)
-	post.Title = title
-	post.Body = body
-	post.Image = img
-	post.Link = link
+	post.Hash = core.stringToHash(post.Link)
 
 	return post, nil
 }

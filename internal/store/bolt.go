@@ -11,9 +11,9 @@ type Wrapper struct {
 }
 
 // New database and create buckets
-func (r *Wrapper) New(posts, ttl string) (*Wrapper, error) {
+func (r *Wrapper) New() (*Wrapper, error) {
 
-	db, err := bolt.Open("data.db", 0600, &bolt.Options{Timeout: 1 * time.Second})
+	db, err := bolt.Open("./data.db", 0600, &bolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
 		return nil, err
 	}
@@ -107,9 +107,9 @@ func (r *Wrapper) GetExpired(maxAge time.Duration) ([][]byte, error) {
 	err := r.DB.View(func(tx *bolt.Tx) error {
 		c := tx.Bucket([]byte("ttl")).Cursor()
 
-		max := []byte(time.Now().UTC().Add(-maxAge).Format(time.RFC3339Nano))
+		maxB := []byte(time.Now().UTC().Add(-maxAge).Format(time.RFC3339Nano))
 
-		for k, v := c.First(); k != nil && bytes.Compare(k, max) <= 0; k, v = c.Next() {
+		for k, v := c.First(); k != nil && bytes.Compare(k, maxB) <= 0; k, v = c.Next() {
 			keys = append(keys, v)
 			ttlKeys = append(ttlKeys, k)
 		}

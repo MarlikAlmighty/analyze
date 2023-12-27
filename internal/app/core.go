@@ -33,6 +33,7 @@ type (
 		Run()
 		Stop()
 		//browser(opts []chromedp.ExecAllocatorOption, url string) (string, error)
+		checkLink(m map[string]string) (map[string]string, error)
 		checkPreSend(v models.Post) error
 		checkBlank(v *models.Post) bool
 		sendToModerChannel(p *models.Post) error
@@ -54,7 +55,7 @@ type (
 
 func (core *Core) Run() {
 
-	statsInt := core.mustParseDuration("1h")
+	statsInt := core.mustParseDuration("30m")
 	statsTimer := time.NewTimer(statsInt)
 	mp := make(map[string]string)
 
@@ -67,7 +68,13 @@ func (core *Core) Run() {
 
 	// init driver
 	driver := agouti.ChromeDriver(
-		agouti.ChromeOptions("args", []string{"--headless", "--disable-gpu", "--no-sandbox"}),
+		agouti.ChromeOptions("args", []string{
+			"--headless",
+			"--disable-gpu",
+			"--no-sandbox",
+			"--whitelisted-ips",
+		}),
+		// agouti.Debug,
 	)
 
 	// ttl all posts
@@ -77,6 +84,11 @@ func (core *Core) Run() {
 
 		statsTimer.Reset(statsInt)
 
+		if err = driver.Start(); err != nil {
+			log.Printf("error driver start: %v\n", err)
+			return
+		}
+
 		func() {
 			log.Println("start clear database")
 			if err = core.Store.Sweep(maxAge); err != nil {
@@ -85,19 +97,20 @@ func (core *Core) Run() {
 			}
 		}()
 
-		if err = driver.Start(); err != nil {
-			log.Printf("error driver start: %v\n", err)
-			return
-		}
-
-		if page, err = driver.NewPage(); err != nil {
-			log.Printf("error new page: %v\n", err)
-			return
-		}
-
 		func() {
 
 			log.Println("start parsing rzn.info")
+
+			page, err = driver.NewPage()
+			if err != nil {
+				log.Println("[RZN]: error new page")
+			}
+
+			defer func() {
+				if err = page.Destroy(); err != nil {
+					log.Println("[RZN]: error page destroy")
+				}
+			}()
 
 			if err = page.Navigate(core.Config.RznUrl); err != nil {
 				log.Println("[RZN]: error got main page: " + err.Error())
@@ -112,6 +125,11 @@ func (core *Core) Run() {
 			// got all links
 			if mp, err = core.getLinkRzn(html); err != nil {
 				log.Println("[RZN]: error got links from rzn: " + err.Error())
+				return
+			}
+
+			if mp, err = core.checkLink(mp); err != nil {
+				log.Println("[RZN]: error check link from rzn: " + err.Error())
 				return
 			}
 
@@ -148,6 +166,17 @@ func (core *Core) Run() {
 
 			log.Println("start parsing ya62.ru")
 
+			page, err = driver.NewPage()
+			if err != nil {
+				log.Println("[YA62]: error new page")
+			}
+
+			defer func() {
+				if err = page.Destroy(); err != nil {
+					log.Println("[YA62]: error page destroy")
+				}
+			}()
+
 			// get start page ya62.ru/news/incidents/
 			if err = page.Navigate(core.Config.YaUrl); err != nil {
 				log.Println("[YA62]: error got main page: " + err.Error())
@@ -165,13 +194,18 @@ func (core *Core) Run() {
 				return
 			}
 
+			if mp, err = core.checkLink(mp); err != nil {
+				log.Printf("[YA62]: error check link from ya: " + err.Error())
+				return
+			}
+
 			// range for links
 			for url := range mp {
 
 				time.Sleep(10 * time.Second)
 
 				if err = page.Navigate(url); err != nil {
-					log.Println("[YA62]: error got main page: " + err.Error())
+					log.Println("[YA62]: error got target page: " + err.Error())
 					return
 				}
 
@@ -192,59 +226,76 @@ func (core *Core) Run() {
 					continue
 				}
 			}
-		}()
 
-		log.Println("Timeout 1 hour...")
+		}()
 
 		if err = driver.Stop(); err != nil {
 			log.Printf("error driver stop: %v\n", err)
 		}
 
+		log.Println("Timeout 30 minutes...")
+
 		<-statsTimer.C
 	}
 }
 
-func (core *Core) checkPreSend(v models.Post) error {
+func (core *Core) checkLink(m map[string]string) (map[string]string, error) {
 
 	var (
-		b   []byte
-		err error
+		b    []byte
+		hash string
+		err  error
 	)
+
+	newMap := make(map[string]string)
+
+	for k, v := range m {
+
+		hash = core.stringToHash(k)
+
+		if b, err = core.Store.Read("posts", hash); err != nil {
+			log.Printf("error read from db: %v\n", err)
+			panic(err)
+		}
+
+		if len(b) == 0 {
+			newMap[k] = v
+		}
+	}
+
+	return newMap, nil
+}
+
+func (core *Core) checkPreSend(v models.Post) error {
+
+	var err error
 
 	// checking for missing fields in a structure
 	if core.checkBlank(&v) {
 		return nil
 	}
 
-	// read from the database post with this hash
-	b, err = core.Store.Read("posts", v.Hash)
-	if err != nil {
+	if err = core.sendToModerChannel(&v); err != nil {
 		return err
 	}
 
-	// there is no such post, send to the moderator channel
-	if len(b) == 0 {
-		if err = core.sendToModerChannel(&v); err != nil {
-			return err
-		}
-
-		// marshal post
-		var post []byte
-		if post, err = json.Marshal(v); err != nil {
-			return err
-		}
-
-		// write post to database
-		if err = core.Store.Write("posts", v.Hash, post); err != nil {
-			return err
-		}
-
-		// writing ttl posts to database
-		if err = core.Store.Write("ttl", time.Now().UTC().Format(time.RFC3339Nano),
-			[]byte(v.Hash)); err != nil {
-			return err
-		}
+	// marshal post
+	var post []byte
+	if post, err = json.Marshal(v); err != nil {
+		return err
 	}
+
+	// write post to database
+	if err = core.Store.Write("posts", v.Hash, post); err != nil {
+		return err
+	}
+
+	// writing ttl posts to database
+	if err = core.Store.Write("ttl", time.Now().UTC().Format(time.RFC3339Nano),
+		[]byte(v.Hash)); err != nil {
+		return err
+	}
+
 	return nil
 }
 
