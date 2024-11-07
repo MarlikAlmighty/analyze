@@ -69,7 +69,7 @@ func (core *Core) catchPostFromYa(html, link string) (models.Post, error) {
 	body = all.ReplaceAllString(body, " ")
 	body = strings.Replace(body, "<...>", "", -1)
 	body = tag.ReplaceAllString(body, "")
-	body = strings.Replace(body, "YA62.ru", "", 3)
+	body = strings.Replace(body, "YA62ru", "", 3)
 	body = strings.TrimSpace(body)
 
 	post.Hash = core.stringToHash(link)
