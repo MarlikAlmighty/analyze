@@ -21,7 +21,7 @@ func (core *Core) getLinkYa(html string) (map[string]string, error) {
 	}
 
 	m := make(map[string]string)
-	doc.Find("div.home-top__slide > div.news-card > div.news-card__info > a").Each(func(i int, s *goquery.Selection) {
+	doc.Find("div.bqFI3 > div > a.OTasl").Each(func(i int, s *goquery.Selection) {
 		link, _ := s.Attr("href")
 		hyperlink := "https://ya62.ru" + link
 		title := s.Text()

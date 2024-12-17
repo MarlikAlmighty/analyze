@@ -97,20 +97,20 @@ func (core *Core) Run() {
 			}
 		}()
 
-		func() {
+		page, err = driver.NewPage()
+		if err != nil {
+			log.Println("[YA62]: error new page")
+		}
 
-			log.Println("start parsing rzn.info")
-
-			page, err = driver.NewPage()
-			if err != nil {
-				log.Println("[RZN]: error new page")
+		defer func() {
+			if err = page.Destroy(); err != nil {
+				log.Println("[RZN]: error page destroy")
 			}
+		}()
 
-			defer func() {
-				if err = page.Destroy(); err != nil {
-					log.Println("[RZN]: error page destroy")
-				}
-			}()
+		/*
+
+			log.Printf("start parsing %s", core.Config.RznUrl)
 
 			if err = page.Navigate(core.Config.RznUrl); err != nil {
 				log.Println("[RZN]: error got main page: " + err.Error())
@@ -159,27 +159,41 @@ func (core *Core) Run() {
 					log.Println("[RZN]: sender error: " + err.Error())
 					continue
 				}
+
 			}
-		}()
+		*/
 
-		func() {
+		log.Printf("start parsing %s", core.Config.YaUrl)
 
-			log.Println("start parsing ya62.ru")
+		// get start page ya62.ru/text/incidents/
+		if err = page.Navigate(core.Config.YaUrl); err != nil {
+			log.Println("[YA62]: error got main page: " + err.Error())
+			return
+		}
 
-			page, err = driver.NewPage()
-			if err != nil {
-				log.Println("[YA62]: error new page")
-			}
+		if html, err = page.HTML(); err != nil {
+			log.Println("[YA62]: error got html: " + err.Error())
+			return
+		}
 
-			defer func() {
-				if err = page.Destroy(); err != nil {
-					log.Println("[YA62]: error page destroy")
-				}
-			}()
+		// got all links
+		if mp, err = core.getLinkYa(html); err != nil {
+			log.Printf("[YA62]: error got link from ya: " + err.Error())
+			return
+		}
 
-			// get start page ya62.ru/news/incidents/
-			if err = page.Navigate(core.Config.YaUrl); err != nil {
-				log.Println("[YA62]: error got main page: " + err.Error())
+		if mp, err = core.checkLink(mp); err != nil {
+			log.Printf("[YA62]: error check link from ya: " + err.Error())
+			return
+		}
+
+		// range for links
+		for url := range mp {
+
+			time.Sleep(10 * time.Second)
+
+			if err = page.Navigate(url); err != nil {
+				log.Println("[YA62]: error got target page: " + err.Error())
 				return
 			}
 
@@ -188,46 +202,22 @@ func (core *Core) Run() {
 				return
 			}
 
-			// got all links
-			if mp, err = core.getLinkYa(html); err != nil {
-				log.Printf("[YA62]: error got link from ya: " + err.Error())
-				return
+			// catch title, post, image from link
+			if post, err = core.catchPostFromYa(html, url); err != nil {
+				log.Println("[YA62]: error catch post from ya: " + err.Error())
+				continue
 			}
 
-			if mp, err = core.checkLink(mp); err != nil {
-				log.Printf("[YA62]: error check link from ya: " + err.Error())
-				return
+			// check and send post
+			if err = core.checkPreSend(post); err != nil {
+				log.Println("[YA62]: sender error: " + err.Error())
+				continue
 			}
+		}
 
-			// range for links
-			for url := range mp {
-
-				time.Sleep(10 * time.Second)
-
-				if err = page.Navigate(url); err != nil {
-					log.Println("[YA62]: error got target page: " + err.Error())
-					return
-				}
-
-				if html, err = page.HTML(); err != nil {
-					log.Println("[YA62]: error got html: " + err.Error())
-					return
-				}
-
-				// catch title, post, image from link
-				if post, err = core.catchPostFromYa(html, url); err != nil {
-					log.Println("[YA62]: error catch post from ya: " + err.Error())
-					continue
-				}
-
-				// check and send post
-				if err = core.checkPreSend(post); err != nil {
-					log.Println("[YA62]: sender error: " + err.Error())
-					continue
-				}
-			}
-
-		}()
+		if err = page.Destroy(); err != nil {
+			log.Println("[YA62]: error page destroy")
+		}
 
 		if err = driver.Stop(); err != nil {
 			log.Printf("error driver stop: %v\n", err)
