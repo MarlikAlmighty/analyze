@@ -72,7 +72,9 @@ func (core *Core) Run() {
 			"--headless",
 			"--disable-gpu",
 			"--no-sandbox",
+			"--disable-dev-shm-usage",
 			"--whitelisted-ips",
+			"--detach",
 		}),
 		// agouti.Debug,
 	)
@@ -89,32 +91,49 @@ func (core *Core) Run() {
 			return
 		}
 
-		func() {
-			log.Println("start clear database")
-			if err = core.Store.Sweep(maxAge); err != nil {
-				log.Printf("error sweep: %v\n", err)
-				return
-			}
-		}()
-
-		page, err = driver.NewPage()
-		if err != nil {
-			log.Println("[YA62]: error new page")
+		log.Println("start clear database")
+		if err = core.Store.Sweep(maxAge); err != nil {
+			log.Printf("error sweep: %v\n", err)
+			return
 		}
 
-		defer func() {
-			if err = page.Destroy(); err != nil {
-				log.Println("[RZN]: error page destroy")
-			}
-		}()
+		page, err = driver.NewPage(agouti.Browser("chrome"))
+		if err != nil {
+			log.Println("[RZN]: error new page")
 
-		/*
+		}
 
-			log.Printf("start parsing %s", core.Config.RznUrl)
+		log.Printf("start parsing %s\n", core.Config.RznUrl)
 
-			if err = page.Navigate(core.Config.RznUrl); err != nil {
-				log.Println("[RZN]: error got main page: " + err.Error())
-				return
+		if err = page.Navigate(core.Config.RznUrl); err != nil {
+			log.Println("[RZN]: error got main page: " + err.Error())
+			return
+		}
+
+		if html, err = page.HTML(); err != nil {
+			log.Println("[RZN]: error got html: " + err.Error())
+			return
+		}
+
+		// got all links
+		if mp, err = core.getLinkRzn(html); err != nil {
+			log.Println("[RZN]: error got links from rzn: " + err.Error())
+			return
+		}
+
+		if mp, err = core.checkLink(mp); err != nil {
+			log.Println("[RZN]: error check link from rzn: " + err.Error())
+			return
+		}
+
+		// range for links
+		for url := range mp {
+
+			time.Sleep(10 * time.Second)
+
+			if err = page.Navigate(url); err != nil {
+				log.Println("[RZN]: error got links page: " + err.Error())
+				continue
 			}
 
 			if html, err = page.HTML(); err != nil {
@@ -122,50 +141,23 @@ func (core *Core) Run() {
 				return
 			}
 
-			// got all links
-			if mp, err = core.getLinkRzn(html); err != nil {
-				log.Println("[RZN]: error got links from rzn: " + err.Error())
-				return
+			// catch title, post, image from link
+			if post, err = core.catchPostFromRzn(html); err != nil {
+				log.Println("[RZN]: error catch post from rzn: " + err.Error())
+				continue
 			}
 
-			if mp, err = core.checkLink(mp); err != nil {
-				log.Println("[RZN]: error check link from rzn: " + err.Error())
-				return
+			// check and send post
+			if err = core.checkPreSend(post); err != nil {
+				log.Println("[RZN]: sender error: " + err.Error())
+				continue
 			}
 
-			// range for links
-			for url := range mp {
+		}
 
-				time.Sleep(10 * time.Second)
+		log.Printf("start parsing %s\n", core.Config.YaUrl)
 
-				if err = page.Navigate(url); err != nil {
-					log.Println("[RZN]: error got links page: " + err.Error())
-					continue
-				}
-
-				if html, err = page.HTML(); err != nil {
-					log.Println("[RZN]: error got html: " + err.Error())
-					return
-				}
-
-				// catch title, post, image from link
-				if post, err = core.catchPostFromRzn(html); err != nil {
-					log.Println("[RZN]: error catch post from rzn: " + err.Error())
-					continue
-				}
-
-				// check and send post
-				if err = core.checkPreSend(post); err != nil {
-					log.Println("[RZN]: sender error: " + err.Error())
-					continue
-				}
-
-			}
-		*/
-
-		log.Printf("start parsing %s", core.Config.YaUrl)
-
-		// get start page ya62.ru/text/incidents/
+		// get start page ya62.ru/news/incidents/
 		if err = page.Navigate(core.Config.YaUrl); err != nil {
 			log.Println("[YA62]: error got main page: " + err.Error())
 			return
@@ -216,7 +208,7 @@ func (core *Core) Run() {
 		}
 
 		if err = page.Destroy(); err != nil {
-			log.Println("[YA62]: error page destroy")
+			log.Println("[RZN]: error page destroy")
 		}
 
 		if err = driver.Stop(); err != nil {

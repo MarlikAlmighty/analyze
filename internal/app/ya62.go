@@ -52,16 +52,15 @@ func (core *Core) catchPostFromYa(html, link string) (models.Post, error) {
 		return post, errors.New(err.Error())
 	}
 
-	doc.Find("div.news-detail > h1").Each(func(i int, s *goquery.Selection) {
+	doc.Find("h1").Each(func(i int, s *goquery.Selection) {
 		post.Title = s.Text()
 	})
 
-	doc.Find("div.news-detail > figure > img").Each(func(i int, s *goquery.Selection) {
-		tmp, _ := s.Attr("src")
-		post.Image = "https://ya62.ru" + tmp
+	doc.Find("div.imageWrapper_nZVrb > picture > img").Each(func(i int, s *goquery.Selection) {
+		post.Image, _ = s.Attr("src")
 	})
 
-	doc.Find("div.news-detail p").Each(func(i int, s *goquery.Selection) {
+	doc.Find("div.uiArticleBlockText_g83x5").Each(func(i int, s *goquery.Selection) {
 		body += s.Text()
 	})
 
