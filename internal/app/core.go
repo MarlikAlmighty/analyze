@@ -103,37 +103,13 @@ func (core *Core) Run() {
 
 		}
 
-		log.Printf("start parsing %s\n", core.Config.RznUrl)
+		func() {
 
-		if err = page.Navigate(core.Config.RznUrl); err != nil {
-			log.Println("[RZN]: error got main page: " + err.Error())
-			return
-		}
+			log.Printf("start parsing %s\n", core.Config.RznUrl)
 
-		if html, err = page.HTML(); err != nil {
-			log.Println("[RZN]: error got html: " + err.Error())
-			return
-		}
-
-		// got all links
-		if mp, err = core.getLinkRzn(html); err != nil {
-			log.Println("[RZN]: error got links from rzn: " + err.Error())
-			return
-		}
-
-		if mp, err = core.checkLink(mp); err != nil {
-			log.Println("[RZN]: error check link from rzn: " + err.Error())
-			return
-		}
-
-		// range for links
-		for url := range mp {
-
-			time.Sleep(10 * time.Second)
-
-			if err = page.Navigate(url); err != nil {
-				log.Println("[RZN]: error got links page: " + err.Error())
-				continue
+			if err = page.Navigate(core.Config.RznUrl); err != nil {
+				log.Println("[RZN]: error got main page: " + err.Error())
+				return
 			}
 
 			if html, err = page.HTML(); err != nil {
@@ -141,51 +117,54 @@ func (core *Core) Run() {
 				return
 			}
 
-			// catch title, post, image from link
-			if post, err = core.catchPostFromRzn(html); err != nil {
-				log.Println("[RZN]: error catch post from rzn: " + err.Error())
-				continue
+			// got all links
+			if mp, err = core.getLinkRzn(html); err != nil {
+				log.Println("[RZN]: error got links from rzn: " + err.Error())
+				return
 			}
 
-			// check and send post
-			if err = core.checkPreSend(post); err != nil {
-				log.Println("[RZN]: sender error: " + err.Error())
-				continue
+			if mp, err = core.checkLink(mp); err != nil {
+				log.Println("[RZN]: error check link from rzn: " + err.Error())
+				return
 			}
 
-		}
+			// range for links
+			for url := range mp {
 
-		log.Printf("start parsing %s\n", core.Config.YaUrl)
+				time.Sleep(10 * time.Second)
 
-		// get start page ya62.ru/news/incidents/
-		if err = page.Navigate(core.Config.YaUrl); err != nil {
-			log.Println("[YA62]: error got main page: " + err.Error())
-			return
-		}
+				if err = page.Navigate(url); err != nil {
+					log.Println("[RZN]: error got links page: " + err.Error())
+					continue
+				}
 
-		if html, err = page.HTML(); err != nil {
-			log.Println("[YA62]: error got html: " + err.Error())
-			return
-		}
+				if html, err = page.HTML(); err != nil {
+					log.Println("[RZN]: error got html: " + err.Error())
+					return
+				}
 
-		// got all links
-		if mp, err = core.getLinkYa(html); err != nil {
-			log.Printf("[YA62]: error got link from ya: " + err.Error())
-			return
-		}
+				// catch title, post, image from link
+				if post, err = core.catchPostFromRzn(html); err != nil {
+					log.Println("[RZN]: error catch post from rzn: " + err.Error())
+					continue
+				}
 
-		if mp, err = core.checkLink(mp); err != nil {
-			log.Printf("[YA62]: error check link from ya: " + err.Error())
-			return
-		}
+				// check and send post
+				if err = core.checkPreSend(post); err != nil {
+					log.Println("[RZN]: sender error: " + err.Error())
+					continue
+				}
 
-		// range for links
-		for url := range mp {
+			}
+		}()
 
-			time.Sleep(10 * time.Second)
+		func() {
 
-			if err = page.Navigate(url); err != nil {
-				log.Println("[YA62]: error got target page: " + err.Error())
+			log.Printf("start parsing %s\n", core.Config.YaUrl)
+
+			// get start page ya62.ru/news/incidents/
+			if err = page.Navigate(core.Config.YaUrl); err != nil {
+				log.Println("[YA62]: error got main page: " + err.Error())
 				return
 			}
 
@@ -194,18 +173,45 @@ func (core *Core) Run() {
 				return
 			}
 
-			// catch title, post, image from link
-			if post, err = core.catchPostFromYa(html, url); err != nil {
-				log.Println("[YA62]: error catch post from ya: " + err.Error())
-				continue
+			// got all links
+			if mp, err = core.getLinkYa(html); err != nil {
+				log.Printf("[YA62]: error got link from ya: " + err.Error())
+				return
 			}
 
-			// check and send post
-			if err = core.checkPreSend(post); err != nil {
-				log.Println("[YA62]: sender error: " + err.Error())
-				continue
+			if mp, err = core.checkLink(mp); err != nil {
+				log.Printf("[YA62]: error check link from ya: " + err.Error())
+				return
 			}
-		}
+
+			// range for links
+			for url := range mp {
+
+				time.Sleep(10 * time.Second)
+
+				if err = page.Navigate(url); err != nil {
+					log.Println("[YA62]: error got target page: " + err.Error())
+					return
+				}
+
+				if html, err = page.HTML(); err != nil {
+					log.Println("[YA62]: error got html: " + err.Error())
+					return
+				}
+
+				// catch title, post, image from link
+				if post, err = core.catchPostFromYa(html, url); err != nil {
+					log.Println("[YA62]: error catch post from ya: " + err.Error())
+					continue
+				}
+
+				// check and send post
+				if err = core.checkPreSend(post); err != nil {
+					log.Println("[YA62]: sender error: " + err.Error())
+					continue
+				}
+			}
+		}()
 
 		if err = page.Destroy(); err != nil {
 			log.Println("[RZN]: error page destroy")
