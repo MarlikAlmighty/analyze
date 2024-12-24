@@ -131,8 +131,6 @@ func (core *Core) Run() {
 			// range for links
 			for url := range mp {
 
-				time.Sleep(10 * time.Second)
-
 				if err = page.Navigate(url); err != nil {
 					log.Println("[RZN]: error got links page: " + err.Error())
 					continue
@@ -186,8 +184,6 @@ func (core *Core) Run() {
 
 			// range for links
 			for url := range mp {
-
-				time.Sleep(10 * time.Second)
 
 				if err = page.Navigate(url); err != nil {
 					log.Println("[YA62]: error got target page: " + err.Error())
