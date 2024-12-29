@@ -21,9 +21,9 @@ func (core *Core) getLinkYa(html string) (map[string]string, error) {
 	}
 
 	m := make(map[string]string)
-	doc.Find("div.bqFI3 > div > a.OTasl").Each(func(i int, s *goquery.Selection) {
+	doc.Find(".textBox_fgrum > a.header_fgrum").Each(func(i int, s *goquery.Selection) {
 		link, _ := s.Attr("href")
-		hyperlink := "https://ya62.ru" + link
+		hyperlink := link
 		title := s.Text()
 		m[hyperlink] = title
 	})
@@ -52,7 +52,7 @@ func (core *Core) catchPostFromYa(html, link string) (models.Post, error) {
 		return post, errors.New(err.Error())
 	}
 
-	doc.Find("h1").Each(func(i int, s *goquery.Selection) {
+	doc.Find("h1.title_ip27z").Each(func(i int, s *goquery.Selection) {
 		post.Title = s.Text()
 	})
 
