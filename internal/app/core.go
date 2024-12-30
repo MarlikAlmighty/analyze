@@ -149,6 +149,10 @@ func (core *Core) Run() {
 					continue
 				}
 
+				if len(post.Body) < 0 {
+					log.Printf("post is zero %s\n", post.Title)
+				}
+
 				// check and send post
 				if err = core.checkPreSend(post); err != nil {
 					log.Println("[RZN]: sender error: " + err.Error())
@@ -203,6 +207,10 @@ func (core *Core) Run() {
 				if post, err = core.catchPostFromYa(html, url); err != nil {
 					log.Println("[YA62]: error catch post from ya: " + err.Error())
 					continue
+				}
+
+				if len(post.Body) < 0 {
+					log.Printf("post is zero %s\n", post.Title)
 				}
 
 				// check and send post
