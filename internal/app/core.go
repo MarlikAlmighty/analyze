@@ -102,7 +102,7 @@ func (core *Core) Run() {
 			log.Println("error new page")
 
 		}
-		/*
+
 			func() {
 
 				log.Printf("start parsing %s\n", core.Config.RznUrl)
@@ -161,8 +161,6 @@ func (core *Core) Run() {
 
 				}
 			}()
-
-		*/
 
 		func() {
 
