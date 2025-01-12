@@ -99,43 +99,17 @@ func (core *Core) Run() {
 
 		page, err = driver.NewPage(agouti.Browser("chrome"))
 		if err != nil {
-			log.Println("[RZN]: error new page")
+			log.Println("error new page")
 
 		}
+		/*
+			func() {
 
-		func() {
+				log.Printf("start parsing %s\n", core.Config.RznUrl)
 
-			log.Printf("start parsing %s\n", core.Config.RznUrl)
-
-			if err = page.Navigate(core.Config.RznUrl); err != nil {
-				log.Println("[RZN]: error got main page: " + err.Error())
-				return
-			}
-
-			if html, err = page.HTML(); err != nil {
-				log.Println("[RZN]: error got html: " + err.Error())
-				return
-			}
-
-			// got all links
-			if mp, err = core.getLinkRzn(html); err != nil {
-				log.Println("[RZN]: error got links from rzn: " + err.Error())
-				return
-			}
-
-			if mp, err = core.checkLink(mp); err != nil {
-				log.Println("[RZN]: error check link from rzn: " + err.Error())
-				return
-			}
-
-			// range for links
-			for url := range mp {
-
-				time.Sleep(1 * time.Second)
-
-				if err = page.Navigate(url); err != nil {
-					log.Println("[RZN]: error got links page: " + err.Error())
-					continue
+				if err = page.Navigate(core.Config.RznUrl); err != nil {
+					log.Println("[RZN]: error got main page: " + err.Error())
+					return
 				}
 
 				if html, err = page.HTML(); err != nil {
@@ -143,24 +117,52 @@ func (core *Core) Run() {
 					return
 				}
 
-				// catch title, post, image from link
-				if post, err = core.catchPostFromRzn(html); err != nil {
-					log.Println("[RZN]: error catch post from rzn: " + err.Error())
-					continue
+				// got all links
+				if mp, err = core.getLinkRzn(html); err != nil {
+					log.Println("[RZN]: error got links from rzn: " + err.Error())
+					return
 				}
 
-				if len(post.Body) < 0 {
-					log.Printf("post is zero %s\n", post.Title)
+				if mp, err = core.checkLink(mp); err != nil {
+					log.Println("[RZN]: error check link from rzn: " + err.Error())
+					return
 				}
 
-				// check and send post
-				if err = core.checkPreSend(post); err != nil {
-					log.Println("[RZN]: sender error: " + err.Error())
-					continue
-				}
+				// range for links
+				for url := range mp {
 
-			}
-		}()
+					time.Sleep(1 * time.Second)
+
+					if err = page.Navigate(url); err != nil {
+						log.Println("[RZN]: error got links page: " + err.Error())
+						continue
+					}
+
+					if html, err = page.HTML(); err != nil {
+						log.Println("[RZN]: error got html: " + err.Error())
+						return
+					}
+
+					// catch title, post, image from link
+					if post, err = core.catchPostFromRzn(html); err != nil {
+						log.Println("[RZN]: error catch post from rzn: " + err.Error())
+						continue
+					}
+
+					if len(post.Body) < 0 {
+						log.Printf("post is zero %s\n", post.Title)
+					}
+
+					// check and send post
+					if err = core.checkPreSend(post); err != nil {
+						log.Println("[RZN]: sender error: " + err.Error())
+						continue
+					}
+
+				}
+			}()
+
+		*/
 
 		func() {
 
@@ -191,7 +193,7 @@ func (core *Core) Run() {
 			// range for links
 			for url := range mp {
 
-				time.Sleep(1 * time.Second)
+				time.Sleep(3 * time.Second)
 
 				if err = page.Navigate(url); err != nil {
 					log.Println("[YA62]: error got target page: " + err.Error())
@@ -214,10 +216,13 @@ func (core *Core) Run() {
 				}
 
 				// check and send post
-				if err = core.checkPreSend(post); err != nil {
-					log.Println("[YA62]: sender error: " + err.Error())
-					continue
-				}
+				/*
+					if err = core.checkPreSend(post); err != nil {
+						log.Println("[YA62]: sender error: " + err.Error())
+						continue
+					}
+				*/
+				log.Printf("%s\n %s\n\n", post.Title, post.Body)
 			}
 		}()
 

@@ -37,8 +37,8 @@ func (core *Core) getLinkYa(html string) (map[string]string, error) {
 
 func (core *Core) catchPostFromYa(html, link string) (models.Post, error) {
 
-	space := regexp.MustCompile(`[[:space:]]`)
-	all := regexp.MustCompile(`\s+`)
+	//space := regexp.MustCompile(`[[:space:]]`)
+	//all := regexp.MustCompile(`\s+`)
 	tag := regexp.MustCompile(`[<\.+>]`)
 	post := models.Post{}
 
@@ -64,12 +64,12 @@ func (core *Core) catchPostFromYa(html, link string) (models.Post, error) {
 		body += s.Text()
 	})
 
-	body = space.ReplaceAllString(body, " ")
-	body = all.ReplaceAllString(body, " ")
+	//body = space.ReplaceAllString(body, " ")
+	//body = all.ReplaceAllString(body, " ")
+	//body = strings.TrimSpace(body)
+	body = strings.Replace(body, "YA62.ru", "", 3)
 	body = strings.Replace(body, "<...>", "", -1)
-	body = tag.ReplaceAllString(body, "")
-	body = strings.Replace(body, "YA62ru", "", 3)
-	body = strings.TrimSpace(body)
+	body = tag.ReplaceAllString(body, ". ")
 
 	post.Hash = core.stringToHash(link)
 	post.Body = body
